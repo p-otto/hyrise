@@ -488,6 +488,8 @@ AllParameterVariant SQLTranslator::translate_hsql_operand(
     case hsql::kExprColumnRef:
       Assert(input_node, "Cannot generate ColumnID without input_node");
       return SQLExpressionTranslator::get_column_id_for_expression(expr, *input_node);
+    case hsql::kExprSelect:
+      return QueryPlaceholder(SQLTranslator().translate_statement(*expr.select));
     default:
       Fail("Could not translate expression: type not supported.");
       return {};

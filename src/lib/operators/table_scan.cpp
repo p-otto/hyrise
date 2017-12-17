@@ -22,6 +22,7 @@
 #include "table_scan/is_null_table_scan_impl.hpp"
 #include "table_scan/like_table_scan_impl.hpp"
 #include "table_scan/single_column_table_scan_impl.hpp"
+#include "table_scan/subselect_table_scan_impl.hpp"
 #include "type_cast.hpp"
 #include "utils/assert.hpp"
 #include "utils/performance_warning.hpp"
@@ -183,10 +184,14 @@ void TableScan::_init_scan() {
     const auto right_value = boost::get<AllTypeVariant>(_right_parameter);
 
     _impl = std::make_unique<SingleColumnTableScanImpl>(_in_table, _left_column_id, _scan_type, right_value);
-  } else /* is_column_name(_right_parameter) */ {
+  } else if (is_column_id(_right_parameter)) {
     const auto right_column_id = boost::get<ColumnID>(_right_parameter);
 
     _impl = std::make_unique<ColumnComparisonTableScanImpl>(_in_table, _left_column_id, _scan_type, right_column_id);
+  } else {
+    const auto subselect = boost::get<QueryPlaceholder>(_right_parameter);
+
+    _impl = std::make_unique<SubselectTableScanImpl>(_in_table, _left_column_id, _scan_type, subselect.node());
   }
 }
 

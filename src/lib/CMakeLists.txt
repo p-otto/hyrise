@@ -128,6 +128,8 @@ set(
     operators/table_scan/like_table_scan_impl.hpp
     operators/table_scan/single_column_table_scan_impl.cpp
     operators/table_scan/single_column_table_scan_impl.hpp
+    operators/table_scan/subselect_table_scan_impl.cpp
+    operators/table_scan/subselect_table_scan_impl.hpp
     operators/table_wrapper.cpp
     operators/table_wrapper.hpp
     operators/union_all.cpp

@@ -140,6 +140,9 @@ enum class SchedulePriority {
   High = 0          // Schedule task at the beginning of the queue
 };
 
+// Forward declare since it is needed for forwarding subqueries
+class AbstractLQPNode;
+
 // Part of AllParameterVariant to reference parameters that will be replaced later.
 // When stored in an operator, the operator's recreate method can contain functionality
 // that will replace a ValuePlaceholder with an explicit value from a given list of arguments
@@ -158,6 +161,23 @@ class ValuePlaceholder {
 
  private:
   uint16_t _index;
+};
+
+class QueryPlaceholder {
+  public:
+    explicit QueryPlaceholder(std::shared_ptr<AbstractLQPNode> node) : _node(node) {}
+
+    std::shared_ptr<AbstractLQPNode> node() const { return _node; }
+
+    friend std::ostream& operator<<(std::ostream& o, const QueryPlaceholder& placeholder) {
+      o << "?" << placeholder.node().get();
+      return o;
+    }
+
+    bool operator==(const QueryPlaceholder& other) const { return _node == other._node; }
+
+  private:
+    std::shared_ptr<AbstractLQPNode> _node;
 };
 
 // TODO(anyone): integrate and replace with ExpressionType
