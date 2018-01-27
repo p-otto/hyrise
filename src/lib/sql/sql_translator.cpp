@@ -46,7 +46,8 @@ ScanType translate_operator_type_to_scan_type(const hsql::OperatorType operator_
       {hsql::kOpGreater, ScanType::GreaterThan}, {hsql::kOpGreaterEq, ScanType::GreaterThanEquals},
       {hsql::kOpLess, ScanType::LessThan},       {hsql::kOpLessEq, ScanType::LessThanEquals},
       {hsql::kOpBetween, ScanType::Between},     {hsql::kOpLike, ScanType::Like},
-      {hsql::kOpNotLike, ScanType::NotLike},     {hsql::kOpIsNull, ScanType::IsNull}};
+      {hsql::kOpNotLike, ScanType::NotLike},     {hsql::kOpIsNull, ScanType::IsNull},
+      {hsql::kOpIn, ScanType::In}};
 
   auto it = operator_to_scan_type.find(operator_type);
   DebugAssert(it != operator_to_scan_type.end(), "Filter expression clause operator is not yet supported.");
@@ -869,14 +870,13 @@ std::shared_ptr<AbstractLQPNode> SQLTranslator::_translate_predicate(
            (allow_function_columns && hsql_expr.isType(hsql::kExprFunctionRef));
   };
 
-  // TODO(anybody): handle IN with join
-
   auto predicate_negated = (hsql_expr.opType == hsql::kOpNot);
 
   const auto* column_ref_hsql_expr = hsql_expr.expr;
   ScanType scan_type;
 
   if (predicate_negated) {
+    // TODO: Implement NOT IN (replace condition in join with NotEqual)
     Assert(hsql_expr.expr != nullptr, "NOT operator without further expressions");
     scan_type = translate_operator_type_to_scan_type(hsql_expr.expr->opType);
 
@@ -931,6 +931,24 @@ std::shared_ptr<AbstractLQPNode> SQLTranslator::_translate_predicate(
     value2 = boost::get<AllTypeVariant>(value2_all_parameter_variant);
 
     Assert(refers_to_column(*column_ref_hsql_expr), "For BETWEENS, hsql_expr.expr has to refer to a column");
+  } else if (scan_type == ScanType::In) {
+    // TODO(anyone): handle IN with join
+
+    Assert(hsql_expr.select, "The IN operand only supports subqueries so far");
+    // TODO: Also support lists of literals
+    auto subselect_node = const_cast<SQLTranslator*>(this)->_translate_select(*hsql_expr.select);
+    auto subselect_expression = LQPExpression::create_subselect(subselect_node);
+
+    const auto right_column = resolve_column(*hsql_expr.expr);
+    const auto left_column = resolve_column(*column_ref_hsql_expr);
+
+    const auto column_references = std::make_pair(left_column, right_column);
+    auto join_node = std::make_shared<JoinNode>(JoinMode::Inner, column_references, ScanType::Equals);
+    join_node->set_left_child(input_node);
+    join_node->set_right_child(subselect_node);
+
+    return join_node;
+
   } else if (scan_type != ScanType::IsNull && scan_type != ScanType::IsNotNull) {
     /**
      * For logical operators (>, >=, <, ...), thanks to the strict interface of PredicateNode/TableScan, we have to
