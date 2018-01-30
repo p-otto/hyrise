@@ -2,20 +2,20 @@
 
 #include <algorithm>
 #include <functional>
+#include <logical_query_plan/lqp_translator.hpp>
 #include <memory>
 #include <numeric>
+#include <scheduler/current_scheduler.hpp>
+#include <sql/sql_query_plan.hpp>
 #include <string>
 #include <utility>
 #include <vector>
-#include <logical_query_plan/lqp_translator.hpp>
-#include <sql/sql_query_plan.hpp>
-#include <scheduler/current_scheduler.hpp>
 
 #include "constant_mappings.hpp"
 #include "operators/pqp_expression.hpp"
 #include "resolve_type.hpp"
-#include "storage/reference_column.hpp"
 #include "storage/dictionary_compression.hpp"
+#include "storage/reference_column.hpp"
 
 namespace opossum {
 
@@ -63,8 +63,7 @@ void Projection::_create_column(boost::hana::basic_type<T> type, const std::shar
     auto values = pmr_concurrent_vector<T>(row_count, T{});
 
     column = std::make_shared<ValueColumn<T>>(std::move(values), std::move(null_values));
-  }
-  else if (expression->type() == ExpressionType::Select) {
+  } else if (expression->type() == ExpressionType::Select) {
     // TODO: IN as special case
     auto subselect_value = expression->table()->get_value<T>(ColumnID(0), 0);
     auto row_count = input_table_left->get_chunk(chunk_id)->size();
@@ -74,13 +73,11 @@ void Projection::_create_column(boost::hana::basic_type<T> type, const std::shar
       auto values = pmr_concurrent_vector<T>(row_count, subselect_value);
 
       column = std::make_shared<ValueColumn<T>>(std::move(values), std::move(null_values));
-    }
-    else {
+    } else {
       auto pos_list = std::make_shared<PosList>(row_count, RowID{ChunkID(0), ChunkOffset(0)});
       column = std::make_shared<ReferenceColumn>(expression->table(), ColumnID(0), pos_list);
     }
-  }
-  else {
+  } else {
     // fill a value column with the specified expression
     auto values = _evaluate_expression<T>(expression, input_table_left, chunk_id);
 

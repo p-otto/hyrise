@@ -42,11 +42,16 @@ namespace opossum {
 
 PredicateCondition translate_operator_type_to_predicate_condition(const hsql::OperatorType operator_type) {
   static const std::unordered_map<const hsql::OperatorType, const PredicateCondition> operator_to_predicate_condition =
-      {{hsql::kOpEquals, PredicateCondition::Equals},       {hsql::kOpNotEquals, PredicateCondition::NotEquals},
-       {hsql::kOpGreater, PredicateCondition::GreaterThan}, {hsql::kOpGreaterEq, PredicateCondition::GreaterThanEquals},
-       {hsql::kOpLess, PredicateCondition::LessThan},       {hsql::kOpLessEq, PredicateCondition::LessThanEquals},
-       {hsql::kOpBetween, PredicateCondition::Between},     {hsql::kOpLike, PredicateCondition::Like},
-       {hsql::kOpNotLike, PredicateCondition::NotLike},     {hsql::kOpIsNull, PredicateCondition::IsNull},
+      {{hsql::kOpEquals, PredicateCondition::Equals},
+       {hsql::kOpNotEquals, PredicateCondition::NotEquals},
+       {hsql::kOpGreater, PredicateCondition::GreaterThan},
+       {hsql::kOpGreaterEq, PredicateCondition::GreaterThanEquals},
+       {hsql::kOpLess, PredicateCondition::LessThan},
+       {hsql::kOpLessEq, PredicateCondition::LessThanEquals},
+       {hsql::kOpBetween, PredicateCondition::Between},
+       {hsql::kOpLike, PredicateCondition::Like},
+       {hsql::kOpNotLike, PredicateCondition::NotLike},
+       {hsql::kOpIsNull, PredicateCondition::IsNull},
        {hsql::kOpIn, PredicateCondition::In}};
 
   auto it = operator_to_predicate_condition.find(operator_type);
@@ -941,13 +946,18 @@ std::shared_ptr<AbstractLQPNode> SQLTranslator::_translate_predicate(
     auto subselect_node = const_cast<SQLTranslator*>(this)->_translate_select(*hsql_expr.select);
     auto subselect_expression = LQPExpression::create_subselect(subselect_node);
 
-    const auto right_column = resolve_column(*hsql_expr.select->selectList->front());
-    const auto left_column = resolve_column(*column_ref_hsql_expr);
+    const auto subselect_columns = LQPExpression::create_columns(subselect_node->output_column_references());
+    auto projection_node = std::make_shared<ProjectionNode>(subselect_columns);
+    projection_node->set_left_child(subselect_node);
 
+    const auto left_column = resolve_column(*column_ref_hsql_expr);
+    Assert(subselect_node->output_column_references().size() == 1, "You can only join on one column");
+    auto right_column = subselect_node->output_column_references()[0];
     const auto column_references = std::make_pair(left_column, right_column);
+
     auto join_node = std::make_shared<JoinNode>(JoinMode::Inner, column_references, PredicateCondition::Equals);
     join_node->set_left_child(input_node);
-    join_node->set_right_child(subselect_node);
+    join_node->set_right_child(projection_node);
     // TODO: add projection to subselect_node to make sure it is executed in time
 
     return join_node;
@@ -978,26 +988,27 @@ std::shared_ptr<AbstractLQPNode> SQLTranslator::_translate_predicate(
   const auto column_id = resolve_column(*column_ref_hsql_expr);
 
   if (value_ref_hsql_expr->select) {
-      const auto column_references = input_node->output_column_references();
-      const auto original_column_expressions = LQPExpression::create_columns(column_references);
+    const auto column_references = input_node->output_column_references();
+    const auto original_column_expressions = LQPExpression::create_columns(column_references);
 
-      auto subselect_node = const_cast<SQLTranslator*>(this)->_translate_select(*value_ref_hsql_expr->select);
-      auto subselect_expression = LQPExpression::create_subselect(subselect_node);
+    auto subselect_node = const_cast<SQLTranslator*>(this)->_translate_select(*value_ref_hsql_expr->select);
+    auto subselect_expression = LQPExpression::create_subselect(subselect_node);
 
-      auto column_expressions = original_column_expressions;
-      column_expressions.push_back(subselect_expression);
+    auto column_expressions = original_column_expressions;
+    column_expressions.push_back(subselect_expression);
 
-      auto expand_projection_node = std::make_shared<ProjectionNode>(column_expressions);
-      expand_projection_node->set_left_child(input_node);
+    auto expand_projection_node = std::make_shared<ProjectionNode>(column_expressions);
+    expand_projection_node->set_left_child(input_node);
 
-      auto subselect_column_id = ColumnID(column_expressions.size() - 1);
-      auto predicate_node = std::make_shared<PredicateNode>(column_id, predicate_condition, subselect_column_id, std::nullopt);
-      predicate_node->set_left_child(expand_projection_node);
+    auto subselect_column_id = ColumnID(column_expressions.size() - 1);
+    auto predicate_node =
+        std::make_shared<PredicateNode>(column_id, predicate_condition, subselect_column_id, std::nullopt);
+    predicate_node->set_left_child(expand_projection_node);
 
-      auto reduce_projection_node = std::make_shared<ProjectionNode>(original_column_expressions);
-      reduce_projection_node->set_left_child(predicate_node);
+    auto reduce_projection_node = std::make_shared<ProjectionNode>(original_column_expressions);
+    reduce_projection_node->set_left_child(predicate_node);
 
-      return reduce_projection_node;
+    return reduce_projection_node;
   }
 
   AllParameterVariant value;
